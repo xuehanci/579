@@ -1,0 +1,143 @@
+---
+title: "579 final"
+author: "Jennifer Ci"
+date: '2022-05-31'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+$\hat {log odds}(Alzheimer's\ disease)= -5.46+0.0658\times Age(years)+0.792\times 1_{male}-0.173 \times 1_{Education\ Level}-0.160 \times 1_{Socioeconomic\ status}$
+
+$\hat {Alzheimer's\ Severity}|Sex, Age, Educ, SES, eTIV, nWBV= 3.947-5.428\times 10^{-4}\times Sex -4.6\times 10^{-3}\times Age -0.033 \times Educ+ 0.025\times SES+ 7.08\times10^{-5}\times eTIV -4.544\times nWBV$
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(rigr)
+oasis <- read.csv("~/Desktop/Bstat579/oasis_cross-sectional.csv")
+
+#create binary variable for alzeimer's disease yes/no
+oasis<-oasis %>% mutate(alz = if_else(CDR==0.0,0,1))
+
+#change column name to sex
+colnames(oasis)[2] <- "sex"
+
+#eliminate all the missing data
+d1=na.omit(oasis)
+d1
+
+#counting missing variable in each variable
+tab1 <-sapply(oasis, function(x) sum(is.na(x)))
+tab1
+tab1 <- tab1 %>% as.data.frame()
+names(tab1) <- "missing value"
+knitr::kable(tab1,
+             caption = "number of missing values")
+
+#descriptive data
+tab <- d1 %>%
+  mutate(male = ifelse(sex == "M", 1, 0)) %>%
+  select(male, Age, Educ, SES, MMSE, eTIV, nWBV,alz) %>%
+  descrip()
+tab <- tab[, 1:9] %>% as.data.frame()
+names(tab) <- c("N", "Msng", "Mean/Proportion", "Std Dev", "Min", "25th pct", "Median",
+                 "75th pct", "Max")
+tab <- tab %>% mutate(`Mean/Proportion` = as.character(signif(`Mean/Proportion`, 5)),
+                        `Std Dev` = as.character(signif(`Std Dev`, 5)),
+                        Min = as.character(signif(Min, 5)),
+                        `25th pct` = as.character(signif(`25th pct`, 5)),
+                        Median = as.character(signif(Median, 5)),
+                        `75th pct` = as.character(signif(`75th pct`, 5)),
+                        Max = as.character(signif(Max, 5)),)
+tab
+
+tab$`Std Dev`[1] <- "---"
+tab$Min[1] <- "---"
+tab$`25th pct`[1] <- "---"
+tab$`Median`[1] <- "---"
+tab$`75th pct`[1] <- "---"
+tab$Max[1] <- "---"
+tab$`Std Dev`[8] <- "---"
+tab$Min[8] <- "---"
+tab$`25th pct`[8] <- "---"
+tab$`Median`[8] <- "---"
+tab$`75th pct`[8] <- "---"
+tab$Max[8] <- "---"
+rownames(tab) <- c("Male sex", "Age (years)","Education Level","Socioeconomic Status","MMSE","eTIV","nWBV","Alzheimers")
+knitr::kable(tab,
+             caption = "Descriptive statistics for sex, age, education level,
+                        socioeconomic status, MMSE, eTIV, nWBV, alzheimer's status in the MRI dataset")
+
+
+# binary alzheimers vs socioeconomic
+log_full_model <- glm(alz ~ Age + sex + Educ + SES, data=d1, family= "binomial")
+log_full_model
+summary(log_full_model)
+
+#age
+log_null_age <- glm(alz ~ sex + Educ + SES, data=d1, family= "binomial")
+age_lr <- anova(log_null_age, log_full_model, test = "Rao")
+summary(age_lr)
+#sex
+log_null_sex <- glm(alz ~ Age + Educ + SES, data=d1, family= "binomial")
+sex_lr <- anova(log_null_sex, log_full_model, test = "Rao")
+
+#Educ
+log_null_educ <- glm(alz ~ Age + sex + SES, data=d1, family= "binomial")
+educ_lr <- anova(log_null_educ, log_full_model, test = "Rao")
+
+#SES
+log_null_SES <- glm(alz ~ Age + sex + Educ, data=d1, family= "binomial")
+SES_lr <- anova(log_null_SES, log_full_model, test = "Rao")
+
+summary_mat <- cbind("Estimate" = log_full_model %>% coef,
+                     log_full_model %>% confint,
+                     "p" = rbind(c(NA, NA),
+                                 age_lr$`Pr(>Chi)`,
+                                 sex_lr$`Pr(>Chi)`,
+                                 educ_lr$`Pr(>Chi)`,
+                                 SES_lr$`Pr(>Chi)`)[,2])
+colnames(summary_mat) <- c("Estimate","Lower 95% CI",
+                           "Upper 95% CI", "LRT P-Value")
+
+summary_mat <- summary_mat[-c(1),] 
+
+rownames(summary_mat) <- c("Age (years)",
+                           "Male Sex",
+                           "Education Level",
+                           "Socioeconomic status")
+
+summary_mat
+summary_mat <- summary_mat[summary_mat %>% rownames %>% sort, ]
+
+summary_mat[,1:3] <- summary_mat[, 1:3] %>% exp
+summary_print <- summary_mat %>% signif(3)
+
+knitr::kable(
+  summary_print,
+  caption = "Estimated Odds Ratios of Alzheimer's disease status from Multivariable Logistic Regrssion")
+
+
+
+###linear regression
+z<-regress("mean", CDR ~ sex+Age+nWBV+eTIV+SES+Educ, data = d1)
+z<-z %>% coef%>% as.data.frame()
+z <- z[,-c(2,3,6)] 
+colnames(z) <- c("Estimate","Lower 95% CI",
+                           "Upper 95% CI", "Wald P-Value")
+z <- z[-c(1),] 
+z <- z[z %>% rownames %>% sort, ]
+z_print <- z %>% signif(3)
+knitr::kable(
+  z_print,
+  caption = "Estimated of Alzheimer's disease severity from Multivariable Linear Regrssion")
+
+
+
+```
+
